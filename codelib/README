@@ -10,16 +10,15 @@ Installing
 ==========
 
 Untar the codelib archive in the 'src/modules' subdirectory. You must then
-enable compilation of the codelib module, and any other modules you wish to
-use, by typing (from the 'src' directory):
+re-compile by typing (from the top directory):
 
-./configure --enable-modules=comsys,mail,codelib
+./Build --enable-modules=comsys,mail,codelib
 
 The argument to the '--enable-modules' parameter is a comma-separated list
 of modules names. Note that this only tells the build process to compile the
 modules. You must still enable them in your config file with 'module
-<modulename>'. Once you've done that, simply type 'make', and add the
-'module codelib' directive to your config file.
+<modulename>'. Once the compile is finished, add the 'module codelib'
+directive to your config file.
 
 How it works
 ============
@@ -92,13 +91,18 @@ Rules for writing a codelib library
   -
 
   The codelib module will upload this to the object as one long line, as
-  follows (the \ signifies that the first line continues):
+  follows (the \ signifies that the two lines are really one, split due
+  to line wrapping):
 
   &CMD-TEST me = $@test: @switch hasflag(%#, wizard) = 1. {@pemit %# = \
   Test worked. You're a wizard.}, {@pemit %# = You ain't no wizard!}
 
 * Once the '-' marker is reached the attribute will be added to the object
   and a new directive may begin.
+* A line that begins with an '@' character starts a command. The command can
+  span multiple lines just like an attribute, and a '-' as the start of a
+  line ends it and executes the command. This is useful for things like
+  @triggering a startup attribute whenever the codelib is uploaded.
 * A line starting with the word 'flags' should contain flag names which will
   be set on the object. If no 'flags' directive is specified, the object
   will have no flags.
