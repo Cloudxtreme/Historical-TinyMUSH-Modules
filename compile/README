@@ -1,0 +1,45 @@
+Compile 1.0 Alpha
+=================
+
+The compile module replaces the built-in MUSH functions u() and ulocal()
+with versions that do byte-compiling on the evaluated attributes and cache
+the results. This will result in a significant speed-up for certain types of
+code, at the expense of memory used to cache the compiled attributes.
+
+Installing
+==========
+
+Untar the compile archive in the 'src/modules' subdirectory. You must then
+rebuild your MUSH binaries by typing (from the top directory):
+
+./Build --enable-modules=comsys,mail,compile
+
+The argument to the '--enable-modules' parameter is a comma-separated list
+of modules names. Note that this only tells the build process to compile the
+modules. You must still enable them in your config file with 'module
+<modulename>'. Once the build is finished, add the 'module compile'
+directive to your config file.
+
+How it works
+============
+
+The compile module transparently replaces u() and ulocal(). You do not have
+to modify any of your softcode.
+
+Configuration Parameters
+========================
+
+The compile module takes no configuration parameters.
+
+Tips
+====
+
+The compile module currently does not support the TRACE flag; an object set
+TRACE will skip any evaluations done by the new u() and ulocal() functions.
+This will be supported in a later release.
+
+Support
+=======
+
+Please e-mail tinymush-bugs@godlike.com with any feature requests or bug
+reports. Thanks!
