@@ -1,0 +1,130 @@
+Codelib 1.0 Alpha
+=================
+
+The codelib module was conceived as a method to allow global softcode
+systems to be easily portable from MUSH to MUSH, without the burden of
+having to upload files through a client or worry about DBrefs. Codelib
+stands for 'code library'.
+
+Installing
+==========
+
+Untar the codelib archive in the 'src/modules' subdirectory. You must then
+enable compilation of the codelib module, and any other modules you wish to
+use, by typing (from the 'src' directory):
+
+./configure --enable-modules=comsys,mail,codelib
+
+The argument to the '--enable-modules' parameter is a comma-separated list
+of modules names. Note that this only tells the build process to compile the
+modules. You must still enable them in your config file with 'module
+<modulename>'. Once you've done that, simply type 'make', and add the
+'module codelib' directive to your config file.
+
+How it works
+============
+
+A code library is a formatted file of softcode, similar to the input many
+'unformatter' scripts use. The library contains information which is
+uploaded to a MUSH object via the @codelib command. This information
+includes things like flags, powers, and attributes. There are three ways you
+can upload code to the MUSH:
+
+1) @codelib/create <filename>
+
+This form of the command will create a new object, and upload the code in
+<filename> to that object. The object will be owned by the creator and will
+be placed in the creator's inventory. <filename> can be a full path to a
+file; for example 'parents/elevator/panel' is a valid filename. It /cannot/
+be an absolute path, and is relative to whatever the 'codelib_path' is set
+to (see the next section).
+
+2) @codelib <filename>=<object>
+
+This will upload the code in <filename> to a pre-existing <object>, where
+<object> can be a thing, room, exit, or even a player (not recommended). The
+<object> will retains its owner, location, zone, and parent, but all
+previous flags, powers, and attributes will be replaced.
+
+3) codelib <filename> <DBref>
+
+This parameter can be specified in your config file, and works exactly the
+same way as the second method, but at startup.
+
+DBref Independence
+==================
+
+The codelib module achieves this by adding a named reference (nref) for
+every code library which is loaded. For example, if you uploaded the code
+library 'bboard' to object #3, then you could use '#__bboard' to reference
+this object instead of '#3', even in the bboard softcode itself. For this to
+work, however, you must upload the code at every MUSH startup-- named
+references are not preserved across shutdowns or restarts.
+
+Configuration Parameters
+========================
+
+In addition to the 'codelib' parameter, you may also specify the pathname
+where code libraries may be found with 'codelib_path <pathname>'. The
+pathname defaults to your 'game' directory. Any filenames specified will be
+relative to this path.
+
+Rules for writing a codelib library
+===================================
+
+* A space or a tab is considered whitespace.
+* A line that begins with a '#' symbol is a comment and will be ignored.
+* Blank lines will be ignored.
+* A line that begins with a '&' symbol starts an attribute. The word
+  immediately following the '&' is the name of an attribute. Any text left
+  on that line will be added as part of the attribute text. All lines up
+  until a line beginning with a single '-' symbol will also be added to the
+  attribute text. Leading whitespace will be ignored. Consider the following
+  example (ignoring the leading spaces):
+
+  &CMD-TEST $@test:
+    @switch hasflag(%#, wizard) = 1, {
+      @pemit %# = 
+         Test worked. You're a wizard.
+    }, {
+      @pemit %# = You ain't no wizard!
+    }
+  -
+
+  The codelib module will upload this to the object as one long line, as
+  follows (the \ signifies that the first line continues):
+
+  &CMD-TEST me = $@test: @switch hasflag(%#, wizard) = 1. {@pemit %# = \
+  Test worked. You're a wizard.}, {@pemit %# = You ain't no wizard!}
+
+* Once the '-' marker is reached the attribute will be added to the object
+  and a new directive may begin.
+* A line starting with the word 'flags' should contain flag names which will
+  be set on the object. If no 'flags' directive is specified, the object
+  will have no flags.
+* A line starting with the word 'powers' works the same way, but with powers
+  instead of flag names.
+* A line starting with the word 'name' should contain the name of the
+  object. If this is not specified, a newly created object will have the
+  name 'Codelib: <filename>'. Existing objects will keep their old name.
+
+Tips
+====
+
+A common practice on MUSHes is to use @function and @addcommand to create
+global functions and commands at startup. A similar method could be applied
+to code libraries. Simply @codelib/create code library objects and store
+them in your master room or a predetermined place. Uploading code to an
+object will always set the CODELIB attribute on the object as the
+filename of the code library, so you can set an @startup on your God
+character to look through objects in the room and upload code to any object
+that has a CODELIB attribute. For example, if your master room was #2, you
+might use this for your @startup:
+
+@dolist lcon(#2)={@switch hasattr(##.CODELIB)=1,@codelib get(##/CODELIB)=##}
+
+Support
+=======
+
+Please e-mail tinymush-bugs@godlike.com with any feature requests or bug
+reports. Thanks!
