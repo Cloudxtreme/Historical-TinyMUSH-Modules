@@ -143,24 +143,26 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 		
 		if ((*buf == 'f') || (*buf == 'F')) {
 			/* Cut through to the first space, tab, or NULL */
-			while ((*s != ' ') && (*s != '\t') && (*s != '\0')) s++;
-			*s = buf[SBUF_SIZE - 1] = '\0';
+			while ((*s != ' ') && (*s != '\t') && (*s != '\0') &&
+			       (*s != '\n')) s++;
+			*s = '\0';
 			
 			if (!strcasecmp("flags", buf)) {
 				/* Skip over white space */
 			
 				s++;
-				while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
+				while (((*s == ' ') || (*s == '\t')) && (*s != '\0') &&
+				        (*s != '\n')) s++;
 		
-				for (q = s; *q; q++)
-					*q = toupper(*q);
-
 				/* Skip over to the newline, and nix it */
 			
 				q = s;
-				while (*q != '\n') q++;
+				while ((*q != '\n') && (*q != '\0')) q++;
 				*q = '\0';
 				
+				for (q = s; *q; q++)
+					*q = toupper(*q);
+
 				/* Iterate through the list of flags */
 				
 				q = strtok_r(s, " \t", &tokst);
@@ -188,24 +190,26 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 		
 		if ((*buf == 'p') || (*buf == 'P')) {
 			/* Cut through to the first space, tab, or NULL */
-			while ((*s != ' ') && (*s != '\t') && (*s != '\0')) s++;
-			*s = buf[SBUF_SIZE - 1] = '\0';
+			while ((*s != ' ') && (*s != '\t') && (*s != '\0') &&
+			       (*s != '\n')) s++;
+			*s = '\0';
 			
 			if (!strcasecmp("powers", buf)) {
 				/* Skip over white space */
 			
 				s++;
-				while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
+				while (((*s == ' ') || (*s == '\t')) && (*s != '\0') &&
+				       (*s != '\n')) s++;
 		
-				for (q = s; *q; q++)
-					*q = tolower(*q);
-
 				/* Skip over to the newline, and nix it */
 			
 				q = s;
-				while (*q != '\n') q++;
+				while ((*q != '\n') && (*q != '\0')) q++;
 				*q = '\0';
 				
+				for (q = s; *q; q++)
+					*q = tolower(*q);
+
 				/* Iterate through the list of powers */
 				
 				q = strtok_r(s, " \t", &tokst);
@@ -231,19 +235,21 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 		
 		if ((*buf == 'n') || (*buf == 'N')) {
 			/* Cut through to the first space, tab, or NULL */
-			while ((*s != ' ') && (*s != '\t') && (*s != '\0')) s++;
-			*s = buf[SBUF_SIZE - 1] = '\0';
+			while ((*s != ' ') && (*s != '\t') && (*s != '\0') &&
+			       (*s != '\n')) s++;
+			*s = '\0';
 			
 			if (!strcasecmp("name", buf)) {
 				/* Skip over white space */
 			
 				s++;
-				while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
+				while (((*s == ' ') || (*s == '\t')) && (*s != '\0') &&
+				       (*s != '\n')) s++;
 		
 				/* Skip over to the newline, and nix it */
 			
 				q = s;
-				while (*q != '\n') q++;
+				while ((*q != '\n') && (*q != '\0')) q++;
 				*q = '\0';
 
 				/* Set the name on the object */
@@ -284,31 +290,35 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 		   attribute or command */
 		
 		if ((*buf == '&') || (*buf == '@')) {
+			p = attrtxt;
+			
 			/* Cut through to the first space, tab, \n, or NULL */
 
 			while ((*s != ' ') && (*s != '\t') && (*s != '\0')
 			       && (*s != '\n')) s++;
-			*s = buf[SBUF_SIZE - 1] = '\0';
+			*s = '\0';
 			strncpy(attrnam, buf, SBUF_SIZE);
 
 			/* Skip over white space */
 			
 			s++;
-			while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
+			while (((*s == ' ') || (*s == '\t')) && (*s != '\0') &&
+			       (*s != '\n')) s++;
 
 			/* Skip over to the newline, and nix it */
 			
 			q = s;
-			while (*q != '\n') q++;
+			while ((*q != '\n') && (*q != '\0')) q++;
 			*q = '\0';
 
 			/* Copy the rest of the line to attribute text */
 			
+			if (*attrnam == '@') {
+				safe_str(attrnam, attrtxt, &p);
+				safe_chr(' ', attrtxt, &p);
+			}
+
 			if (*s) {
-				if (*attrnam == '@') {
-					safe_str(attrnam, attrtxt, &p);
-					safe_chr(' ', attrtxt, &p);
-				}
 				safe_str(s, attrtxt, &p);
 			}
 
@@ -322,12 +332,13 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 			/* Skip over to the newline, and nix it */
 			
 			q = s;
-			while (*q != '\n') q++;
+			while ((*q != '\n') && (*q != '\0')) q++;
 			*q = '\0';
 
 			/* Strip leading white space */
 		
-			while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
+			while (((*s == ' ') || (*s == '\t')) && (*s != '\0') &&
+			        (*s != '\n')) s++;
 		
 			/* Copy the rest of the line to attribute text */
 		
