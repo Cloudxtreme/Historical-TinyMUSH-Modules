@@ -140,7 +140,8 @@ int eval, ncargs;
 unsigned char **dstr;
 char *cargs[];
 {
-	char *real_fargs[NFARGS + 1], *preserve[MAX_GLOBAL_REGS];
+	char *real_fargs[NFARGS + 1];
+	GDATA *preserve;
 	char **fargs = real_fargs + 1;
 	char *tstr, *tbuf, *savepos, *atr_gotten, *start, *oldp;
 	char savec, ch, *savestr, *str, *xptr, *mundane, *p;
@@ -148,7 +149,7 @@ char *cargs[];
 	char xtbuf[SBUF_SIZE], *xtp;
 	dbref aowner;
 	int at_space, nfargs, gender, i, j, alldone, aflags, alen, feval;
-	int is_top, save_count, preserve_len[MAX_GLOBAL_REGS];
+	int is_top, save_count;
 	int ansi, nchar, navail, len;
 	FUN *fp;
 	UFUN *ufp;
@@ -343,9 +344,7 @@ char *cargs[];
 					str = tstr;
 					
 					if (ufp->flags & FN_PRES) {
-					    save_global_regs("eval_save",
-							     preserve,
-							     preserve_len);
+					    preserve = save_global_regs("eval_save");
 					}
 					
 					exec(buff, bufc, i, player, cause,
@@ -355,8 +354,7 @@ char *cargs[];
 					
 					if (ufp->flags & FN_PRES) {
 					    restore_global_regs("eval_restore",
-								preserve,
-								preserve_len);
+								preserve);
 					}
 
 					free_lbuf(tstr);
@@ -612,16 +610,61 @@ char *cargs[];
 					(*dstr)--;
 					break;
 				}
-				i = qidx_chartab[(unsigned char) **dstr];
-				if ((i < 0) || (i >= MAX_GLOBAL_REGS))
+				if (**dstr != '<') {
+				    i = qidx_chartab[(unsigned char) **dstr];
+				    if ((i < 0) || (i >= MAX_GLOBAL_REGS))
 					break;
-				if (mudstate.global_regs[i]) {
-					safe_known_str(mudstate.global_regs[i],
-						      mudstate.glob_reg_len[i],
-						       buff, bufc);
-				}
-				if (!**dstr)
+				    if (mudstate.rdata &&
+					mudstate.rdata->q_alloc > i) {
+				      safe_known_str(mudstate.rdata->q_regs[i],
+						     mudstate.rdata->q_lens[i],
+						     buff, bufc);
+				    }
+				    if (!**dstr)
 					(*dstr)--;
+				    break;
+				}
+				xptr = *dstr;
+				(*dstr)++;
+				if (!**dstr) {
+				    *dstr = xptr;
+				    break;
+				}
+				if (!mudstate.rdata ||
+				    !mudstate.rdata->xr_alloc) {
+				    /* We know there's no result, so we
+				     * just advance past.
+				     */
+				    while (**dstr && (**dstr != '>'))
+					(*dstr)++;
+				    if (**dstr != '>') {
+					/* Whoops, no end. Go back. */
+					*dstr = xptr;
+					break;
+				    }
+				    break;
+				}
+				xtp = xtbuf;
+				while (**dstr && (**dstr != '>')) {
+				    safe_sb_chr(tolower(**dstr), xtbuf, &xtp);
+				    (*dstr)++;
+				}
+				if (**dstr != '>') {
+				    /* Ran off the end. Back up. */
+				    *dstr = xptr;
+				    break;
+				}
+				*xtp = '\0';
+				for (i=0; i < mudstate.rdata->xr_alloc; i++) {
+				    if (mudstate.rdata->x_names[i] &&
+					!strcmp(xtbuf,
+						mudstate.rdata->x_names[i])) {
+				      safe_known_str(mudstate.rdata->x_regs[i],
+						     mudstate.rdata->x_lens[i],
+						     buff, bufc);
+				      break;
+				    }
+				}
 				break;
 			case 'O':	/* Objective pronoun */
 			case 'o':
@@ -795,7 +838,7 @@ void mod_compile_compile(buff, bufc, dstr)
 char *buff, **bufc;
 char **dstr;
 {
-	char *real_fargs[NFARGS + 1], *preserve[MAX_GLOBAL_REGS];
+	char *real_fargs[NFARGS + 1];
 	char **fargs = real_fargs + 1;
 	char *tstr, *tbuf, *savepos, *atr_gotten, *start, *oldp;
 	char savec, ch, *savestr, *str, *xptr, *mundane, *p;
@@ -803,7 +846,7 @@ char **dstr;
 	char xtbuf[SBUF_SIZE], *xtp;
 	dbref aowner;
 	int at_space, nfargs, gender, i, j, alldone, aflags, alen, feval;
-	int is_top, save_count, preserve_len[MAX_GLOBAL_REGS];
+	int is_top, save_count;
 	int ansi, nchar, navail;
 	int len;
 	FUN *fp;
@@ -1001,12 +1044,13 @@ char **dstr;
 FUNCTION(mod_compile_do_ufun)
 {
 	dbref aowner, thing;
-	int is_local, aflags, alen, anum, preserve_len[MAX_GLOBAL_REGS], len;
+	int is_local, aflags, alen, anum, len;
 	ATTR *ap;
-	char *atext, *preserve[MAX_GLOBAL_REGS], *str, *tbuf, *tbufc;
+	char *atext, *str, *tbuf, *tbufc;
 	DBData key, data;
 	Aname okey;
 	time_t start_time = 0;
+	GDATA *preserve;
 	
 	is_local = ((FUN *)fargs[-1])->flags & U_LOCAL;
 
@@ -1023,7 +1067,7 @@ FUNCTION(mod_compile_do_ufun)
 	/* If we're evaluating locally, preserve the global registers. */
 
 	if (is_local) {
-		save_global_regs("fun_ulocal_save", preserve, preserve_len);
+		preserve = save_global_regs("fun_ulocal_save");
 	}
 	
 	/* Try to find a compiled version of the attribute in cache */
@@ -1066,8 +1110,7 @@ FUNCTION(mod_compile_do_ufun)
 	/* If we're evaluating locally, restore the preserved registers. */
 
 	if (is_local) {
-		restore_global_regs("fun_ulocal_restore", preserve,
-				    preserve_len);
+		restore_global_regs("fun_ulocal_restore", preserve);
 	}
 }
 
