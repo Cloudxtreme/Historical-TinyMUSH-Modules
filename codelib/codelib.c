@@ -40,30 +40,37 @@ MODHASHES mod_codelib_hashtable[] = {
 { NULL,		NULL,				0,	0}};
 
 CONF mod_codelib_conftable[] = {
-{(char *)"codelib",	cf_hash,	CA_GOD,	CA_WIZARD,	(int *)&mod_codelib_config.libraries,	(long)"Codelib library"},
-{(char *)"codelib_path",	cf_string,	CA_GOD,	CA_WIZARD,	(int *)&mod_codelib_config.pathname,	MBUF_SIZE},
+{(char *)"codelib",		cf_hash,	CA_GOD,	CA_GOD,	(int *)&mod_codelib_config.libraries,	(long)"Codelib library"},
+{(char *)"codelib_path",	cf_string,	CA_GOD,	CA_GOD,	(int *)&mod_codelib_config.pathname,	MBUF_SIZE},
 { NULL,			NULL,		0,	0,		NULL,					0}};
 
 
 void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 	FILE *f;
-	char *attrtxt, *attrnam, *buf, *s, *p, *q, *tokst;
+	char *attrtxt, *attrnam, *buf, *nam, *s, *p, *q, *tokst;
 	int anum, type;
 	dbref *np;
 	FLAGENT *fp;
 	POWERENT *pp;
 	
-	s = alloc_mbuf("mod_codelib.upload_file");
-	buf = alloc_mbuf("mod_codelib.upload_file");
-	p = attrtxt = alloc_lbuf("mod_codelib.upload_file");
-	attrnam = alloc_sbuf("mod_codelib.upload_file");
+	nam = alloc_mbuf("mod_codelib.upload_file.nam");
+	buf = alloc_mbuf("mod_codelib.upload_file.buf");
+	p = attrtxt = alloc_lbuf("mod_codelib.upload_file.attrtxt");
+	attrnam = alloc_sbuf("mod_codelib.upload_file.attrnam");
+
+	/* Do not allow code uploads to GOD */
+	
+	if (object == GOD) {
+		notify(player, "Permission denied.");
+		return;
+	}
 
 	/* Prepend the pathname and open the file */
 
-	snprintf(s, MBUF_SIZE, "%s/%s", mod_codelib_config.pathname,
+	snprintf(nam, MBUF_SIZE, "%s/%s", mod_codelib_config.pathname,
 		file);
 
-	if ((f = fopen(s, "r")) == NULL) {
+	if ((f = fopen(nam, "r")) == NULL) {
 		STARTLOG(LOG_ALWAYS, "MOD", "CODELIB")
 			log_printf("%s could not be opened for reading", s);
 		ENDLOG
@@ -72,10 +79,9 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 		return;
 	}
 
-
 	/* Preserve the object name */
 	
-	strncpy(s, Name(object), MBUF_SIZE);
+	strncpy(nam, Name(object), MBUF_SIZE);
 
 	/* Clear the old attributes from the object */
 
@@ -83,7 +89,7 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 
 	/* Set the name of the object */
 
-	s_Name(object, s);
+	s_Name(object, nam);
 
 	/* Preserve the type of the object */
 	
@@ -104,6 +110,12 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 	
 	s_Flags(object, type);
 	
+	/* Add the CODELIB attribute containing the filename */
+
+	strcpy(attrnam, "CODELIB");
+	anum = mkattr(attrnam);
+	atr_add(object, anum, file, player, AF_GOD);
+
 	while (fgets(buf, MBUF_SIZE, f) != NULL) {
 		s = buf;
 		
@@ -154,6 +166,7 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
                                 	q = strtok_r(NULL, " \t", &tokst);
                                 }
 			}
+			continue;
 		}
 
 		/* If we see 'powers', set powers on the object */
@@ -196,7 +209,35 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
                                 	q = strtok_r(NULL, " \t", &tokst);
                                 }
 			}
+			continue;
 		}
+
+		/* If we see 'name', set name on the object */
+		
+		if ((*buf == 'n') || (*buf == 'N')) {
+			/* Cut through to the first space, tab, or NULL */
+			while ((*s != ' ') && (*s != '\t') && (*s != '\0')) s++;
+			*s = buf[SBUF_SIZE - 1] = '\0';
+			
+			if (!strcasecmp("name", buf)) {
+				/* Skip over white space */
+			
+				s++;
+				while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
+		
+				/* Skip over to the newline, and nix it */
+			
+				q = s;
+				while (*q != '\n') q++;
+				*q = '\0';
+
+				/* Set the name on the object */
+				
+				s_Name(object, s);
+			}
+			continue;
+		}
+
 		                                   
 		/* If we see a '-', end the attribute */
 		
@@ -207,7 +248,7 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 			
 			anum = mkattr(attrnam);
 			*attrnam = '\0';
-			atr_add(object, anum, attrtxt, GOD, 0);
+			atr_add(object, anum, attrtxt, player, 0);
 			p = attrtxt;
 
 			continue;
@@ -263,24 +304,24 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 
 	/* Add an Nref for this object */
 
-	snprintf(s, MBUF_SIZE, "_%s", file);
-	np = (int *) hashfind(s, &mudstate.nref_htab);
+	snprintf(nam, MBUF_SIZE, "_%s", file);
+	np = (int *) hashfind(nam, &mudstate.nref_htab);
 	if (np) {
 		XFREE(np, "nref");
 		np = (int *) XMALLOC(sizeof(int), "nref");
 		*np = object;
-		hashrepl(s, np, &mudstate.nref_htab);
+		hashrepl(nam, np, &mudstate.nref_htab);
 	} else {
 		np = (int *) XMALLOC(sizeof(int), "nref");
 		*np = object;
-		hashadd(s, np, &mudstate.nref_htab, 0);
+		hashadd(nam, np, &mudstate.nref_htab, 0);
 	}
 
 	if (player != NOTHING)
 		notify(player, "Code library uploaded.");
 	fclose(f);
 	
-	free_mbuf(s);
+	free_mbuf(nam);
 	free_lbuf(attrtxt);
 	free_sbuf(attrnam);
 	free_mbuf(buf);
