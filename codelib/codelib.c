@@ -45,13 +45,13 @@ CONF mod_codelib_conftable[] = {
 { NULL,			NULL,		0,	0,		NULL,					0}};
 
 
-
 void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 	FILE *f;
 	char *attrtxt, *attrnam, *buf, *s, *p, *q, *tokst;
 	int anum, type;
 	dbref *np;
 	FLAGENT *fp;
+	POWERENT *pp;
 	
 	s = alloc_mbuf("mod_codelib.upload_file");
 	buf = alloc_mbuf("mod_codelib.upload_file");
@@ -94,6 +94,11 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 	s_Flags(object, 0);
 	s_Flags2(object, 0);
 	s_Flags3(object, 0);
+
+	/* Clear the object's powers */
+	
+	s_Powers(object, 0);
+	s_Powers2(object, 0);
 	
 	/* Set the object's type */
 	
@@ -144,6 +149,48 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 							s_Flags2(object, Flags2(object) | fp->flagvalue);
 						} else {
 							s_Flags(object, Flags(object) | fp->flagvalue);
+						}
+					}
+                                	q = strtok_r(NULL, " \t", &tokst);
+                                }
+			}
+		}
+
+		/* If we see 'powers', set powers on the object */
+		
+		if ((*buf == 'p') || (*buf == 'P')) {
+			/* Cut through to the first space, tab, or NULL */
+			while ((*s != ' ') && (*s != '\t') && (*s != '\0')) s++;
+			*s = buf[SBUF_SIZE - 1] = '\0';
+			
+			if (!strcasecmp("powers", buf)) {
+				/* Skip over white space */
+			
+				s++;
+				while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
+		
+				for (q = s; *q; q++)
+					*q = tolower(*q);
+
+				/* Skip over to the newline, and nix it */
+			
+				q = s;
+				while (*q != '\n') q++;
+				*q = '\0';
+				
+				/* Iterate through the list of powers */
+				
+				q = strtok_r(s, " \t", &tokst);
+				
+				while (q != NULL) {
+					/* Set the appropriate bit */
+					
+					pp = (POWERENT *)hashfind(q, &mudstate.powers_htab); 
+					if (pp != NULL) {
+						if (pp->powerpower & POWER_EXT) {
+							s_Powers2(object, Powers2(object) | pp->powervalue);
+						} else {
+							s_Powers(object, Powers(object) | pp->powervalue);
 						}
 					}
                                 	q = strtok_r(NULL, " \t", &tokst);
@@ -313,8 +360,6 @@ DO_CMD_TWO_ARG(mod_codelib_do_codelib)
 			notify(player, "No such object.");
 			return;
 		}
-			
-		s_Name(object, s);
 	}
 	
 	/* Upload the softcode */
