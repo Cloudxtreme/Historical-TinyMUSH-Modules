@@ -48,9 +48,10 @@ CONF mod_codelib_conftable[] = {
 
 void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 	FILE *f;
-	char *attrtxt, *attrnam, *buf, *s, *p, *q;
-	int anum;
+	char *attrtxt, *attrnam, *buf, *s, *p, *q, *tokst;
+	int anum, type;
 	dbref *np;
+	FLAGENT *fp;
 	
 	s = alloc_mbuf("mod_codelib.upload_file");
 	buf = alloc_mbuf("mod_codelib.upload_file");
@@ -71,31 +72,97 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 		return;
 	}
 
+
+	/* Preserve the object name */
+	
+	strncpy(s, Name(object), MBUF_SIZE);
+
 	/* Clear the old attributes from the object */
 
 	atr_free(object);
 
-	/* Set the name of the object and lock it */
+	/* Set the name of the object */
 
-	snprintf(s, MBUF_SIZE, "Codelib: %s", file);
 	s_Name(object, s);
 
+	/* Preserve the type of the object */
+	
+	type = Typeof(object);
+	
+	/* Clear the object's flags */
+	
+	s_Flags(object, 0);
+	s_Flags2(object, 0);
+	s_Flags3(object, 0);
+	
+	/* Set the object's type */
+	
+	s_Flags(object, type);
 	
 	while (fgets(buf, MBUF_SIZE, f) != NULL) {
 		s = buf;
 		
 		/* Skip over comments and blank lines*/
 		
-		if ((*buf == '#') || (*buf == '\0'))
+		if ((*buf == '#') || (*buf == '\n') || (*buf == '\0'))
 			continue;
 		
+		/* If we see 'flags', set flags on the object */
+		
+		if ((*buf == 'f') || (*buf == 'F')) {
+			/* Cut through to the first space, tab, or NULL */
+			while ((*s != ' ') && (*s != '\t') && (*s != '\0')) s++;
+			*s = buf[SBUF_SIZE - 1] = '\0';
+			
+			if (!strcasecmp("flags", buf)) {
+				/* Skip over white space */
+			
+				s++;
+				while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
+		
+				for (q = s; *q; q++)
+					*q = toupper(*q);
+
+				/* Skip over to the newline, and nix it */
+			
+				q = s;
+				while (*q != '\n') q++;
+				*q = '\0';
+				
+				/* Iterate through the list of flags */
+				
+				q = strtok_r(s, " \t", &tokst);
+				
+				while (q != NULL) {
+					/* Set the appropriate bit */
+					
+					fp = (FLAGENT *)hashfind(q, &mudstate.flags_htab); 
+					if (fp != NULL) {
+						if (fp->flagflag & FLAG_WORD3) {
+							s_Flags3(object, Flags3(object) | fp->flagvalue);
+						} else if (fp->flagflag & FLAG_WORD2) {
+							s_Flags2(object, Flags2(object) | fp->flagvalue);
+						} else {
+							s_Flags(object, Flags(object) | fp->flagvalue);
+						}
+					}
+                                	q = strtok_r(NULL, " \t", &tokst);
+                                }
+			}
+		}
+		                                   
 		/* If we see a '-', end the attribute */
 		
 		if (*buf == '-') {
 			*p = '\0';
+			
+			/* Create the attribute name and set it */
+			
 			anum = mkattr(attrnam);
+			*attrnam = '\0';
 			atr_add(object, anum, attrtxt, GOD, 0);
 			p = attrtxt;
+
 			continue;
 		}
 		
@@ -103,12 +170,14 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 		
 		if (*buf == '&') {
 			/* Cut through to the first space, tab, or NULL */
+
 			while ((*s != ' ') && (*s != '\t') && (*s != '\0')) s++;
 			*s = buf[SBUF_SIZE - 1] = '\0';
 			strncpy(attrnam, buf + 1, SBUF_SIZE);
 
 			/* Skip over white space */
 			
+			s++;
 			while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
 
 			/* Skip over to the newline, and nix it */
@@ -123,19 +192,26 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 			continue;
 		}
 			
-		/* Skip over to the newline, and nix it */
+		/* If we are in the middle of setting an attribute, copy
+		 * any strings to attribute text */
+		
+		if (*attrnam) {
+			/* Skip over to the newline, and nix it */
 			
-		q = s;
-		while (*q != '\n') q++;
-		*q = '\0';
+			q = s;
+			while (*q != '\n') q++;
+			*q = '\0';
 
-		/* Strip leading white space */
+			/* Strip leading white space */
 		
-		while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
+			while (((*s == ' ') || (*s == '\t')) && (*s != '\0')) s++;
 		
-		/* Copy the rest of the line to attribute text */
+			/* Copy the rest of the line to attribute text */
 		
-		safe_str(s, attrtxt, &p);
+			safe_str(s, attrtxt, &p);
+		}
+		
+		/* The line didn't match anything, discard it */
 	}
 
 	/* Add an Nref for this object */
