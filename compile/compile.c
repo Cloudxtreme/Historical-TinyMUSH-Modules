@@ -8,6 +8,8 @@ extern char qidx_chartab[256];  /* from funvars.c */
 extern char token_chartab[256]; /* from eval.c */
 extern char *ansi_chartab[256]; /* from eval.c */
 
+unsigned int dbtype;
+
 char mod_compile_compile_special_chartab[256] =
 {
     1,1,1,1,1,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,1,0,0,0,0,
@@ -39,6 +41,64 @@ struct tcache_ent {
         struct tcache_ent *next;
 } *tcache_head;
 int tcache_top, tcache_count;
+
+static void tcache_add(orig, result)
+char *orig, *result;
+{
+	char *tp;
+	TCENT *xp;
+
+	if (strcmp(orig, result)) {
+		tcache_count++;
+		if (tcache_count <= mudconf.trace_limit) {
+			xp = (TCENT *) alloc_sbuf("tcache_add.sbuf");
+			tp = alloc_lbuf("tcache_add.lbuf");
+			strcpy(tp, result);
+			xp->orig = orig;
+			xp->result = tp;
+			xp->next = tcache_head;
+			tcache_head = xp;
+		} else {
+			free_lbuf(orig);
+		}
+	} else {
+		free_lbuf(orig);
+	}
+}
+
+static void tcache_finish(player)
+dbref player;
+{
+	TCENT *xp;
+	NUMBERTAB *np;
+	dbref target;
+
+	if (H_Redirect(player)) {
+	    np = (NUMBERTAB *) nhashfind(player, &mudstate.redir_htab);
+	    if (np) {
+		target = np->num; 
+	    } else {
+		/* Ick. If we have no pointer, we should have no flag. */
+		s_Flags3(player, Flags3(player) & ~HAS_REDIRECT);
+		target = Owner(player);
+	    }
+	} else {
+	    target = Owner(player);
+	}
+
+	while (tcache_head != NULL) {
+		xp = tcache_head;
+		tcache_head = xp->next;
+		notify(target,
+		       tprintf("%s(#%d)} '%s' -> '%s'", Name(player), player,
+			       xp->orig, xp->result));
+		free_lbuf(xp->orig);
+		free_lbuf(xp->result);
+		free_sbuf(xp);
+	}
+	tcache_top = 1;
+	tcache_count = 0;
+}
 
 #define MOD_COMPILE_BYTECODE	0xFF
 #define MOD_COMPILE_END		0x01
@@ -1034,10 +1094,13 @@ char **dstr;
 FUNCTION(mod_compile_do_ufun)
 {
 	dbref aowner, thing;
-	int is_local, aflags, alen, anum, preserve_len[MAX_GLOBAL_REGS];
+	int is_local, aflags, alen, anum, preserve_len[MAX_GLOBAL_REGS], len;
 	ATTR *ap;
 	char *atext, *preserve[MAX_GLOBAL_REGS], *str, *tbuf, *tbufc;
-
+	DBData key, data;
+	Aname okey;
+	time_t start_time = 0;
+	
 	is_local = ((FUN *)fargs[-1])->flags & U_LOCAL;
 
 	/* We need at least one argument */
@@ -1049,7 +1112,6 @@ FUNCTION(mod_compile_do_ufun)
 	/* Two possibilities for the first arg: <obj>/<attr> and <attr>. */
 
 	Parse_Uattr(player, fargs[0], thing, anum, ap);
-	Get_Uattr(player, thing, ap, atext, aowner, aflags, alen);
 
 	/* If we're evaluating locally, preserve the global registers. */
 
@@ -1057,16 +1119,42 @@ FUNCTION(mod_compile_do_ufun)
 		save_global_regs("fun_ulocal_save", preserve, preserve_len);
 	}
 	
-	/* Evaluate it using the rest of the passed function args */
+	/* Try to find a compiled version of the attribute in cache */
+	
+	okey.object = thing;
+	okey.attrnum = anum;
+	key.dptr = &okey;
+	key.dsize = sizeof(Aname);
+	
+	data = cache_get(key, dbtype);
 
-	str = atext;
-	tbufc = tbuf = alloc_lbuf("mod_compile_do_ufun");
-	mod_compile_compile(tbuf, &tbufc, &str);
-	str = tbuf;
-	mod_compile_exec(buff, bufc, thing, player, cause, EV_FCHECK | EV_EVAL,
-	     &str, &(fargs[1]), nfargs - 1);
-	free_lbuf(atext);
-	free_lbuf(tbuf);
+	/* Check to see if the game has restarted since we compiled
+	 * this attribute */
+
+	if (data.dptr) {
+		memcpy(data.dptr, &start_time, sizeof(time_t));
+	}
+	
+	if (start_time && (start_time == mudstate.start_time)) {
+		str = (char *)data.dptr + sizeof(time_t);
+		mod_compile_exec(buff, bufc, thing, player, cause, EV_FCHECK | EV_EVAL,
+		     &str, &(fargs[1]), nfargs - 1);
+	} else {
+		Get_Uattr(player, thing, ap, atext, aowner, aflags, alen);
+		str = atext;
+		tbufc = tbuf = alloc_lbuf("mod_compile_do_ufun");
+		mod_compile_compile(tbuf, &tbufc, &str);
+		data.dptr = (void *)XMALLOC(tbufc - tbuf + 1 + sizeof(time_t), "mod_compile_do_ufun");
+		memcpy(data.dptr, &mudstate.start_time, sizeof(time_t)); 
+		memcpy(data.dptr + sizeof(time_t), tbuf, tbufc - tbuf + 1);
+		data.dsize = tbufc - tbuf + 1 + sizeof(time_t);
+		cache_put(key, data, dbtype);
+		str = tbuf;
+		mod_compile_exec(buff, bufc, thing, player, cause, EV_FCHECK | EV_EVAL,
+		     &str, &(fargs[1]), nfargs - 1);
+		free_lbuf(atext);
+		free_lbuf(tbuf);
+	}
 	
 	/* If we're evaluating locally, restore the preserved registers. */
 
@@ -1077,8 +1165,8 @@ FUNCTION(mod_compile_do_ufun)
 }
 
 FUN mod_compile_functable[] = {
-{"CMPLU",           mod_compile_do_ufun,        0,  FN_VARARGS, CA_PUBLIC,      NULL},
-{"CMPLULOCAL",      mod_compile_do_ufun,        0,  FN_VARARGS|U_LOCAL,
+{"FASTU",           mod_compile_do_ufun,        0,  FN_VARARGS, CA_PUBLIC,      NULL},
+{"FASTULOCAL",      mod_compile_do_ufun,        0,  FN_VARARGS|U_LOCAL,
                                                 CA_PUBLIC,      NULL},
 {NULL,		NULL,			0,	0,	0,		NULL}};
 
@@ -1091,3 +1179,25 @@ void mod_compile_init()
     register_functions(mod_compile_functable);
 }
 
+void mod_compile_cleanup_startup()
+{
+    dbtype = register_dbtype("compile");
+}
+
+void mod_compile_cache_put_notify(key, type)
+DBData key;
+unsigned int type;
+{
+	if (type == DBTYPE_ATTRIBUTE) {
+		cache_del(key, dbtype);
+	}
+}
+
+void mod_compile_cache_del_notify(key, type)
+DBData key;
+unsigned int type;
+{
+	if (type == DBTYPE_ATTRIBUTE) {
+		cache_del(key, dbtype);
+	}
+}
