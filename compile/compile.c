@@ -34,72 +34,6 @@ char mod_compile_exec_special_chartab[256] =
     0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,1
 };
 
-typedef struct tcache_ent TCENT;
-struct tcache_ent {
-        char *orig;
-        char *result;
-        struct tcache_ent *next;
-} *tcache_head;
-int tcache_top, tcache_count;
-
-static void tcache_add(orig, result)
-char *orig, *result;
-{
-	char *tp;
-	TCENT *xp;
-
-	if (strcmp(orig, result)) {
-		tcache_count++;
-		if (tcache_count <= mudconf.trace_limit) {
-			xp = (TCENT *) alloc_sbuf("tcache_add.sbuf");
-			tp = alloc_lbuf("tcache_add.lbuf");
-			strcpy(tp, result);
-			xp->orig = orig;
-			xp->result = tp;
-			xp->next = tcache_head;
-			tcache_head = xp;
-		} else {
-			free_lbuf(orig);
-		}
-	} else {
-		free_lbuf(orig);
-	}
-}
-
-static void tcache_finish(player)
-dbref player;
-{
-	TCENT *xp;
-	NUMBERTAB *np;
-	dbref target;
-
-	if (H_Redirect(player)) {
-	    np = (NUMBERTAB *) nhashfind(player, &mudstate.redir_htab);
-	    if (np) {
-		target = np->num; 
-	    } else {
-		/* Ick. If we have no pointer, we should have no flag. */
-		s_Flags3(player, Flags3(player) & ~HAS_REDIRECT);
-		target = Owner(player);
-	    }
-	} else {
-	    target = Owner(player);
-	}
-
-	while (tcache_head != NULL) {
-		xp = tcache_head;
-		tcache_head = xp->next;
-		notify(target,
-		       tprintf("%s(#%d)} '%s' -> '%s'", Name(player), player,
-			       xp->orig, xp->result));
-		free_lbuf(xp->orig);
-		free_lbuf(xp->result);
-		free_sbuf(xp);
-	}
-	tcache_top = 1;
-	tcache_count = 0;
-}
-
 #define MOD_COMPILE_BYTECODE	0xFF
 #define MOD_COMPILE_END		0x01
 #define MOD_COMPILE_FUN		0x02
@@ -214,7 +148,7 @@ char *cargs[];
 	char xtbuf[SBUF_SIZE], *xtp;
 	dbref aowner;
 	int at_space, nfargs, gender, i, j, alldone, aflags, alen, feval;
-	int is_trace, is_top, save_count, preserve_len[MAX_GLOBAL_REGS];
+	int is_top, save_count, preserve_len[MAX_GLOBAL_REGS];
 	int ansi, nchar, navail, len;
 	FUN *fp;
 	UFUN *ufp;
@@ -242,8 +176,6 @@ char *cargs[];
 	alldone = 0;
 	ansi = 0;
 
-	is_trace = Trace(player) && !(eval & EV_NOTRACE); is_top = 0;
-
 	/* Extend the buffer if we need to. */
 	
 	if (((*bufc) - buff) > (LBUF_SIZE - SBUF_SIZE)) {
@@ -255,14 +187,6 @@ char *cargs[];
 
 	oldp = start = *bufc;
 	
-	/* If we are tracing, save a copy of the starting buffer */
-
-	savestr = NULL;
-	if (is_trace) {
-		is_top = tcache_empty();
-		savestr = alloc_lbuf("exec.save");
-		strcpy(savestr, *dstr);
-	}
 	while (**dstr && !alldone) {
 
 	    /* We adjust the special table every time we go around this
@@ -843,23 +767,6 @@ char *cargs[];
 		XFREE(buff, "exec.buff_extend");
 		buff = realbuff;
 	}
-	
-	/* Report trace information */
-
-	if (is_trace) {
-		tcache_add(savestr, start);
-		save_count = tcache_count - mudconf.trace_limit;;
-		if (is_top || !mudconf.trace_topdown)
-			tcache_finish(player);
-		if (is_top && (save_count > 0)) {
-			tbuf = alloc_mbuf("exec.trace_diag");
-			sprintf(tbuf,
-				"%d lines of trace output discarded.",
-				save_count);
-			notify(player, tbuf);
-			free_mbuf(tbuf);
-		}
-	}
 }
 
 INLINE void safe_copy_thing(src, buff, bufp, size)
@@ -896,7 +803,7 @@ char **dstr;
 	char xtbuf[SBUF_SIZE], *xtp;
 	dbref aowner;
 	int at_space, nfargs, gender, i, j, alldone, aflags, alen, feval;
-	int is_trace, is_top, save_count, preserve_len[MAX_GLOBAL_REGS];
+	int is_top, save_count, preserve_len[MAX_GLOBAL_REGS];
 	int ansi, nchar, navail;
 	int len;
 	FUN *fp;
