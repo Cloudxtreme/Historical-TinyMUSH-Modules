@@ -262,7 +262,7 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 			
 			if (*attrnam == '@') {
 				/* Execute a command */
-				(void)process_command(object, player, 1,
+				(void)process_command(player, player, 1,
 					attrtxt, (char **)NULL, 0);
 				*attrnam = '\0';
 				p = attrtxt;
