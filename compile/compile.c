@@ -71,12 +71,18 @@ int nfargs, eval;
 		else
 			tstr = parse_to(&rstr, '\0', 0);
 
-		bp = fargs[arg] = alloc_lbuf("parse_arglist");
-		str = tstr;
-		mod_compile_compile(fargs[arg], &bp, &str, eval);
-		*bp = '\0';
-		arglen[arg] = bp - fargs[arg];
-		arg++;
+		if (eval & EV_EVAL) {
+			bp = fargs[arg] = alloc_lbuf("parse_arglist");
+			str = tstr;
+			mod_compile_compile(fargs[arg], &bp, &str, eval);
+			*bp = '\0';
+			arglen[arg] = bp - fargs[arg];
+			arg++;
+		} else {
+			fargs[arg] = tstr;
+			arglen[arg] = strlen(tstr);
+			arg++;
+		}
 	}
 
 	/* Copy the number of arguments */
@@ -89,7 +95,8 @@ int nfargs, eval;
 		safe_copy_thing(&arglen[i], buff, bufc, sizeof(int));
 		safe_copy_thing(fargs[i], buff, bufc, arglen[i]);
 		safe_chr(MOD_COMPILE_END, buff, bufc);
-		free_lbuf(fargs[i]);
+		if (eval & EV_EVAL)
+			free_lbuf(fargs[i]);
 	}
 }
 
@@ -875,14 +882,6 @@ int eval;
 	oldp = start = *bufc;
 	
 	while (**dstr && !alldone) {
-
-	    /* We adjust the special table every time we go around this
-	     * loop, in order to avoid always treating '#' like a special
-	     * character, as it gets used a whole heck of a lot.
-	     */
-	    mod_compile_compile_special_chartab[(unsigned char) '#'] =
-		(mudstate.in_loop || mudstate.in_switch) ? 1 : 0;
-
 	    if (!mod_compile_compile_special_chartab[(unsigned char) **dstr]) {
 		/* Mundane characters are the most common. There are usually
 		 * a bunch in a row. We should just copy them.
@@ -1025,7 +1024,13 @@ int eval;
                         else
                                 nfargs = NFARGS;
 
-			mod_compile_compile_arglist(buff, bufc, tbuf, eval, nfargs);
+			if ((fp && (fp->flags & FN_NO_EVAL)) ||
+			    (ufp && (ufp->flags & FN_NO_EVAL)))
+				feval = (eval & ~EV_EVAL) | EV_STRIP_ESC;
+			else
+				feval = eval;
+
+			mod_compile_compile_arglist(buff, bufc, tbuf, feval, nfargs);
 			safe_chr(MOD_COMPILE_END, buff, bufc);
 			(*dstr)--;
 	    }
@@ -1070,7 +1075,9 @@ FUNCTION(mod_compile_do_ufun)
 	/* Two possibilities for the first arg: <obj>/<attr> and <attr>. */
 
 	Parse_Uattr(player, fargs[0], thing, anum, ap);
-
+	if (!ap)
+		return;
+		
 	/* If we're evaluating locally, preserve the global registers. */
 
 	if (is_local) {
