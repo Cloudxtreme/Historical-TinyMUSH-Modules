@@ -83,10 +83,6 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 	
 	strncpy(nam, Name(object), MBUF_SIZE);
 
-	/* Clear the old attributes from the object */
-
-	atr_free(object);
-
 	/* Set the name of the object */
 
 	s_Name(object, nam);
