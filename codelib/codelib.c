@@ -70,7 +70,7 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 	snprintf(nam, MBUF_SIZE, "%s/%s", mod_codelib_config.pathname,
 		file);
 
-	if ((f = fopen(nam, "r")) == NULL) {
+ 	if ((f = fopen(nam, "r")) == NULL) {
 		STARTLOG(LOG_ALWAYS, "MOD", "CODELIB")
 			log_printf("%s could not be opened for reading", s);
 		ENDLOG
@@ -115,6 +115,21 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 	strcpy(attrnam, "CODELIB");
 	anum = mkattr(attrnam);
 	atr_add(object, anum, file, player, AF_GOD);
+
+	/* Add an Nref for this object */
+
+	snprintf(nam, MBUF_SIZE, "_%s", file);
+	np = (int *) hashfind(nam, &mudstate.nref_htab);
+	if (np) {
+		XFREE(np, "nref");
+		np = (int *) XMALLOC(sizeof(int), "nref");
+		*np = object;
+		hashrepl(nam, np, &mudstate.nref_htab);
+	} else {
+		np = (int *) XMALLOC(sizeof(int), "nref");
+		*np = object;
+		hashadd(nam, np, &mudstate.nref_htab, 0);
+	}
 
 	while (fgets(buf, MBUF_SIZE, f) != NULL) {
 		s = buf;
@@ -238,30 +253,43 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 			continue;
 		}
 
-		                                   
 		/* If we see a '-', end the attribute */
 		
 		if (*buf == '-') {
 			*p = '\0';
 			
-			/* Create the attribute name and set it */
+			if (*attrnam == '@') {
+				/* Execute a command */
+				(void)process_command(object, player, 1,
+					attrtxt, (char **)NULL, 0);
+				*attrnam = '\0';
+				p = attrtxt;
+			} else {
+				/* Create the attribute name and set it */
 			
-			anum = mkattr(attrnam);
-			*attrnam = '\0';
-			atr_add(object, anum, attrtxt, player, 0);
-			p = attrtxt;
+				anum = mkattr(attrnam + 1);
+				*attrnam = '\0';
+	
+				/* Check for a good attribute number */
+	
+				if (anum > 0)
+					atr_add(object, anum, attrtxt, player, 0);
+				p = attrtxt;
+			}
 
 			continue;
 		}
 		
-		/* If we see a '&', it's the beginning of an attribute */
+		/* If we see a '&' or '@', it's the beginning of an
+		   attribute or command */
 		
-		if (*buf == '&') {
-			/* Cut through to the first space, tab, or NULL */
+		if ((*buf == '&') || (*buf == '@')) {
+			/* Cut through to the first space, tab, \n, or NULL */
 
-			while ((*s != ' ') && (*s != '\t') && (*s != '\0')) s++;
+			while ((*s != ' ') && (*s != '\t') && (*s != '\0')
+			       && (*s != '\n')) s++;
 			*s = buf[SBUF_SIZE - 1] = '\0';
-			strncpy(attrnam, buf + 1, SBUF_SIZE);
+			strncpy(attrnam, buf, SBUF_SIZE);
 
 			/* Skip over white space */
 			
@@ -276,7 +304,14 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 
 			/* Copy the rest of the line to attribute text */
 			
-			safe_str(s, attrtxt, &p);
+			if (*s) {
+				if (*attrnam == '@') {
+					safe_str(attrnam, attrtxt, &p);
+					safe_chr(' ', attrtxt, &p);
+				}
+				safe_str(s, attrtxt, &p);
+			}
+
 			continue;
 		}
 			
@@ -296,25 +331,11 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 		
 			/* Copy the rest of the line to attribute text */
 		
-			safe_str(s, attrtxt, &p);
+			if (*s)
+				safe_str(s, attrtxt, &p);
 		}
 		
 		/* The line didn't match anything, discard it */
-	}
-
-	/* Add an Nref for this object */
-
-	snprintf(nam, MBUF_SIZE, "_%s", file);
-	np = (int *) hashfind(nam, &mudstate.nref_htab);
-	if (np) {
-		XFREE(np, "nref");
-		np = (int *) XMALLOC(sizeof(int), "nref");
-		*np = object;
-		hashrepl(nam, np, &mudstate.nref_htab);
-	} else {
-		np = (int *) XMALLOC(sizeof(int), "nref");
-		*np = object;
-		hashadd(nam, np, &mudstate.nref_htab, 0);
 	}
 
 	if (player != NOTHING)
