@@ -54,7 +54,7 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 	POWERENT *pp;
 	
 	nam = alloc_mbuf("mod_codelib.upload_file.nam");
-	buf = alloc_mbuf("mod_codelib.upload_file.buf");
+	buf = alloc_lbuf("mod_codelib.upload_file.buf");
 	p = attrtxt = alloc_lbuf("mod_codelib.upload_file.attrtxt");
 	attrnam = alloc_sbuf("mod_codelib.upload_file.attrnam");
 
@@ -127,7 +127,7 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 		hashadd(nam, np, &mudstate.nref_htab, 0);
 	}
 
-	while (fgets(buf, MBUF_SIZE, f) != NULL) {
+	while (fgets(buf, LBUF_SIZE, f) != NULL) {
 		s = buf;
 		
 		/* Skip over comments and blank lines*/
@@ -352,7 +352,7 @@ void mod_codelib_upload_file(char *file, dbref object, dbref player) {
 	free_mbuf(nam);
 	free_lbuf(attrtxt);
 	free_sbuf(attrnam);
-	free_mbuf(buf);
+	free_lbuf(buf);
 }
 
 void mod_codelib_cleanup_startup()
