@@ -25,7 +25,7 @@ char mod_compile_compile_special_chartab[256] =
 char mod_compile_exec_special_chartab[256] =
 {
     1,1,1,1,1,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,1,0,0,0,0,
-    1,0,0,1,0,1,0,0, 1,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+    1,0,0,1,0,1,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
     0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,1,1,0,0,0,
     0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,1,0,0,0,0,
     0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
@@ -46,9 +46,9 @@ char mod_compile_exec_special_chartab[256] =
 
 #define	NFARGS	30
 
-void mod_compile_compile_arglist(buff, bufc, dstr, nfargs)
+void mod_compile_compile_arglist(buff, bufc, dstr, eval, nfargs)
 char *dstr, *buff, **bufc;
-int nfargs;
+int nfargs, eval;
 {
 	char *rstr, *tstr, *bp, *str;
 	int arg, i, len;
@@ -73,7 +73,7 @@ int nfargs;
 
 		bp = fargs[arg] = alloc_lbuf("parse_arglist");
 		str = tstr;
-		mod_compile_compile(fargs[arg], &bp, &str);
+		mod_compile_compile(fargs[arg], &bp, &str, eval);
 		*bp = '\0';
 		arglen[arg] = bp - fargs[arg];
 		arg++;
@@ -834,9 +834,10 @@ char *buff, **bufp;
     *bufp = tp;
 }
 
-void mod_compile_compile(buff, bufc, dstr)
+void mod_compile_compile(buff, bufc, dstr, eval)
 char *buff, **bufc;
 char **dstr;
+int eval;
 {
 	char *real_fargs[NFARGS + 1];
 	char **fargs = real_fargs + 1;
@@ -918,7 +919,7 @@ char **dstr;
 				*dstr = tstr;
 			} else {
 				str = tbuf;
-				mod_compile_compile(buff, bufc, &str);
+				mod_compile_compile(buff, bufc, &str, eval);
 				(*dstr)--;
 			}
 			break;
@@ -949,6 +950,11 @@ char **dstr;
 			 * function. If so, execute it if we should. 
 			 */
 
+			if (!(eval & EV_FCHECK)) {
+				safe_chr('(', buff, bufc);
+				break;
+			}
+                                                                                                                
 			/* Load an sbuf with an uppercase version of the func
 			 * name, and see if the func exists.  Trim 
 			 * trailing spaces from the name if configured. 
@@ -980,6 +986,7 @@ char **dstr;
 				*bufc = oldp;
 				safe_tprintf_str(buff, bufc, "#-1 FUNCTION (%s) NOT FOUND", xtbuf);
 				alldone = 1;
+				eval &= ~EV_FCHECK;
 				break;
 			}
 
@@ -1018,7 +1025,7 @@ char **dstr;
                         else
                                 nfargs = NFARGS;
 
-			mod_compile_compile_arglist(buff, bufc, tbuf, nfargs);
+			mod_compile_compile_arglist(buff, bufc, tbuf, eval, nfargs);
 			safe_chr(MOD_COMPILE_END, buff, bufc);
 			(*dstr)--;
 	    }
@@ -1049,7 +1056,7 @@ FUNCTION(mod_compile_do_ufun)
 	char *atext, *str, *tbuf, *tbufc;
 	DBData key, data;
 	Aname okey;
-	time_t start_time = 0;
+	time_t restart_time = 0;
 	GDATA *preserve;
 	
 	is_local = ((FUN *)fargs[-1])->flags & U_LOCAL;
@@ -1073,7 +1080,7 @@ FUNCTION(mod_compile_do_ufun)
 	/* Try to find a compiled version of the attribute in cache */
 	
 	okey.object = thing;
-	okey.attrnum = anum;
+	okey.attrnum = ap->number;
 	key.dptr = &okey;
 	key.dsize = sizeof(Aname);
 	
@@ -1083,22 +1090,24 @@ FUNCTION(mod_compile_do_ufun)
 	 * this attribute */
 
 	if (data.dptr) {
-		memcpy(data.dptr, &start_time, sizeof(time_t));
+		memcpy(&restart_time, (const void *)data.dptr, sizeof(time_t));
 	}
-	
-	if (start_time && (start_time == mudstate.start_time)) {
-		str = (char *)data.dptr + sizeof(time_t);
+
+	if (restart_time && (restart_time == mudstate.restart_time)) {
+		tbuf = str = (char *)XMALLOC(data.dsize - sizeof(time_t), "mod_compile_do_ufun");
+		memcpy((void *)str, (const void *)(data.dptr + sizeof(time_t)), data.dsize - sizeof(time_t));
 		mod_compile_exec(buff, bufc, thing, player, cause, EV_FCHECK | EV_EVAL,
 		     &str, &(fargs[1]), nfargs - 1);
+		XFREE(tbuf, "mod_compile_do_ufun");
 	} else {
 		Get_Uattr(player, thing, ap, atext, aowner, aflags, alen);
 		str = atext;
 		tbufc = tbuf = alloc_lbuf("mod_compile_do_ufun");
-		mod_compile_compile(tbuf, &tbufc, &str);
-		data.dptr = (void *)XMALLOC(tbufc - tbuf + 1 + sizeof(time_t), "mod_compile_do_ufun");
-		memcpy(data.dptr, &mudstate.start_time, sizeof(time_t)); 
-		memcpy(data.dptr + sizeof(time_t), tbuf, tbufc - tbuf + 1);
-		data.dsize = tbufc - tbuf + 1 + sizeof(time_t);
+		mod_compile_compile(tbuf, &tbufc, &str, EV_FCHECK | EV_EVAL);
+		data.dptr = (void *)XMALLOC((int)(tbufc - tbuf) + 1 + sizeof(time_t), "mod_compile_do_ufun");
+		memcpy(data.dptr, &mudstate.restart_time, sizeof(time_t)); 
+		memcpy(data.dptr + sizeof(time_t), tbuf, (int)(tbufc - tbuf) + 1);
+		data.dsize = (int)(tbufc - tbuf) + 1 + sizeof(time_t);
 		cache_put(key, data, dbtype);
 		str = tbuf;
 		mod_compile_exec(buff, bufc, thing, player, cause, EV_FCHECK | EV_EVAL,
@@ -1115,8 +1124,8 @@ FUNCTION(mod_compile_do_ufun)
 }
 
 FUN mod_compile_functable[] = {
-{"FASTU",           mod_compile_do_ufun,        0,  FN_VARARGS, CA_PUBLIC,      NULL},
-{"FASTULOCAL",      mod_compile_do_ufun,        0,  FN_VARARGS|U_LOCAL,
+{"U",           mod_compile_do_ufun,        0,  FN_VARARGS, CA_PUBLIC,      NULL},
+{"ULOCAL",      mod_compile_do_ufun,        0,  FN_VARARGS|U_LOCAL,
                                                 CA_PUBLIC,      NULL},
 {NULL,		NULL,			0,	0,	0,		NULL}};
 
@@ -1126,7 +1135,11 @@ FUN mod_compile_functable[] = {
 	
 void mod_compile_init()
 {
-    register_functions(mod_compile_functable);
+	FUN *fp;
+
+	for (fp = mod_compile_functable; fp->name; fp++) {
+		hashrepl((char *)fp->name, (int *) fp, &mudstate.func_htab);
+	}
 }
 
 void mod_compile_cleanup_startup()
